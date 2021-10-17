@@ -25,8 +25,8 @@ import Foundation
 ///
 /// *Deterministic state automata* —aka *dfa*— is a finite state machine built on a sequence of elements,
 /// which then can be used for matching the pattern of those elements in another sequence.
-/// You'd use this state machine by first obtaining a new instance via its initializer `init(_:)`, which
-/// takes the sequence of elements representing the pattern to look  for:
+/// You'd use this state machine by first obtaining a new instance via its initializer `init(_:)`,
+/// passing as its parameter the sequence of elements representing the pattern to look for:
 ///
 /// ```Swift
 /// var dfa = DFA("seashells")
@@ -52,7 +52,7 @@ import Foundation
 /// // Prints: "Found match"
 /// ```
 ///
-/// It's good practice to reset the dfa to its initial state before starting a
+/// It's also good practice to reset the dfa to its initial state before starting a
 /// new search on a different sequence:
 ///
 /// ```Swift
@@ -68,7 +68,7 @@ import Foundation
 ///     }
 /// }
 ///
-/// // Didn't get to final state:
+/// // Didn't get to its final state:
 /// print(dfa.state)
 /// // Prints: "2"
 ///
@@ -86,15 +86,15 @@ import Foundation
 ///     }
 /// }
 ///
-/// // Prints: "Found match"…
+/// // Prints: "Found match"
+/// ```
 ///
-/// // …Which is not correct because the dfa was still at state 2 after
-/// // the lookup on txt1 ended: hence it matched "s" -> "e" -> "a" at the
-/// // end of txt1 and then once starting to lookup on txt2 it
-/// // matched "s" -> "h" -> "e" -> "l" -> "l" "s"
-/// // The right approach would have been to first reset the dfa to its
-/// // initial state:
+///  This is not correct because the dfa was still at state `2` after the lookup on `txt1`
+///   ended: hence it matched "s" -> "e" -> "a" at the end of `txt1` and then
+///   when looking up on `txt2` it matched "s" -> "h" -> "e" -> "l" -> "l" -> "s" getting to its final state.
+/// The right approach in this case would have been to first reset the dfa to its initial state:
 ///
+/// ```Swift
 /// dfa.resetToInitialState()
 ///
 /// print(dfa.state)
@@ -113,15 +113,18 @@ import Foundation
 /// // Didn't get to final state:
 /// print(dfa.state)
 /// // Prints: "1"
-/// 
 /// ```
+///
 public struct DFA<Element: Hashable> {
     typealias StateNode = Dictionary<Element, Int>
+    
+    /// The initial state for this dfa.
+    public let initialState = 0
     
     let _states: Array<StateNode>
     
     /// The state this dfa is at.
-    public private(set) var state = 0
+    public fileprivate(set) var state = 0
     
     /// Creates a new dfa instance, initalized to contain state nodes for the specified sequence.
     ///
@@ -131,36 +134,52 @@ public struct DFA<Element: Hashable> {
     /// - Complexity: O(*n*) where *n* is the length of the specified sequence of elements.
     public init<S: Sequence>(_ sequence: S) where S.Element == Element {
         self._states = sequence
-            .withContiguousStorageIfAvailable({ Self ._buildStates(from: $0) }) ?? Self._buildStates(from: sequence)
+            .withContiguousStorageIfAvailable({
+                Self ._buildStates(from: $0)
+            }) ?? Self._buildStates(from: sequence)
     }
     
 }
 
+// MARK: - Public computed properties
 extension DFA {
+    /// The elements of the pattern for this dfa.
+    ///
+    /// - Complexity: O(1).
+    public var pattern: AnySequence<Element> {
+        AnySequence { _Pattern(self) }
+    }
+    
+    /// A boolean value, `true` when this dfa doesn't contain elements, `false` otherwise.
+    ///
+    /// - Note: An empty dfa always stays in its initial state and never reaches its final state.
+    public var isEmpty: Bool {
+        _states.first!.isEmpty
+    }
+    
+    /// A boolean value: `true` when this dfa is at its initial state, `false` when not.
+    @inlinable
+    public var isAtInitialState: Bool { state == initialState }
+    
     /// The final state for this dfa.
     public var finalState: Int { _states.endIndex }
     
     /// A boolean value: `true` when this dfa is at its final state, `false` when not.
     public var isAtFinalState: Bool { state == _states.endIndex }
     
-    /// A boolean value: `true` when this dfa is at its initial state, `false` when not.
-    @inlinable
-    public var isAtInitialState: Bool { state == 0 }
-    
-    /// A boolean value, `true` when this dfa doesn't contain elements, `false` otherwise.
-    ///
-    /// - Note: An empty dfa always stays in its initial state and never reaches its final state.
-    public var isEmpty: Bool {
-        _states[0].isEmpty
-    }
-    
+}
+
+// MARK: - public methods
+extension DFA {
     /// Updates this dfa state for the the specified element.
     ///
     /// - Parameter element: The element to use for updating this dfa state.
     /// - Complexity: O(1).
     public mutating func updateState(for element: Element) {
         state = _states
-            .withUnsafeBufferPointer({ $0[state % _states.endIndex][element, default: 0] })
+            .withUnsafeBufferPointer {
+                $0[state % _states.endIndex][element, default: 0]
+            }
     }
     
     /// Resets this dfa to its initial state.
@@ -172,7 +191,39 @@ extension DFA {
     
 }
 
-// MARK: - private helpers
+// MARK: - Private
+extension DFA {
+    fileprivate struct _Pattern: IteratorProtocol {
+        private let _states: Array<StateNode>
+        
+        private var _state: Int = 0
+        
+        fileprivate init(_ dfa: DFA) {
+            self._states = dfa._states
+        }
+        
+        mutating func next() -> Element? {
+            guard
+                _state < _states.endIndex
+            else { return nil }
+            
+            defer { _state += 1 }
+            
+            return _states
+                .withUnsafeBufferPointer { buffer in
+                    guard
+                        let keyIndex = buffer[_state].values
+                            .firstIndex(of: _state + 1)
+                    else { return nil }
+                    
+                    return buffer[_state].keys[keyIndex]
+                }
+        }
+        
+    }
+    
+}
+
 extension DFA {
     fileprivate static func _buildStates<S: Sequence>(from sequence: S) -> Array<StateNode> where S.Iterator.Element == Element {
         var states: Array<StateNode> = [[:]]
@@ -183,11 +234,11 @@ extension DFA {
             var x = 0
             while let newElement = iterator.next() {
                 var newStateNode = states
-                    .withUnsafeBufferPointer({ $0[x] })
+                    .withUnsafeBufferPointer { $0[x] }
                 newStateNode[newElement] = states.endIndex + 1
                 states.append(newStateNode)
                 x = states
-                    .withUnsafeBufferPointer({ $0[x][newElement, default: 0] })
+                    .withUnsafeBufferPointer { $0[x][newElement, default: 0] }
             }
         }
         
